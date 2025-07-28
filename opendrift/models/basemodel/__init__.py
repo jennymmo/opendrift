@@ -319,7 +319,7 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                                         'description': 'Name of simulation'},
             'general:coastline_action': {
                 'type': 'enum',
-                'enum': ['none', 'stranding', 'previous'],
+                'enum': ['none', 'stranding', 'previous', 'beachingmodel'],
                 'default': 'stranding',
                 'level': CONFIG_LEVEL_BASIC,
                 'description': 'None means that objects may also move over land. '
@@ -627,6 +627,21 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                                      self.elements.z)
             self.environment.land_binary_mask = en.land_binary_mask
 
+        if i == "beachingmodel":
+            on_land = np.where(self.environment.land_binary_mask == 1)[0]
+            floating = np.where(self.environment.land_binary_mask == 0)[0]
+            #self.elements.beached = self.environment.land_binary_mask
+            # Save the last floating location, for use in resuspension
+            if len(floating) > 0:
+                self.elements.last_floating_lon[floating] = self.elements.lon[floating]
+                self.elements.last_floating_lat[floating] = self.elements.lat[floating]
+                self.elements.beached[floating] = 0
+                logger.debug(f"{len(floating)} elements floating.")
+
+            if len(on_land) > 0:
+                self.elements.beached[on_land] = 1
+                logger.debug(f"{len(on_land)} elements on land.")
+        
         if i == 'stranding':  # Deactivate elements on land, but not in air
             on_land = np.where(self.environment.land_binary_mask == 1)[0]
             if len(on_land) == 0:
