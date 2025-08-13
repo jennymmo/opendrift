@@ -196,7 +196,7 @@ class ModifiedPlastDrift(OceanDrift):
                                             scale=sigma,
                                             loc=eta)
                 
-            beached_mask = y > 0
+            beached_mask = y > eta
             floating_mask = ~beached_mask
 
             self.elements.height_on_beach[on_land] = y 
@@ -371,7 +371,7 @@ class ModifiedPlastDrift(OceanDrift):
                 # Remove the lower waves from the number of remaining waves 
                 #remaining_waves_beached -= N_y
                 remaining_waves_for_active_particles[beached_mask] = remaining_waves_beached - N_y
-                remaining_waves_beached = remaining_waves_beached - N_y 
+                remaining_waves_beached = remaining_waves_beached - N_y
                 # Check for particles that still have more waves remaining after we removed the lower ones 
                 if np.any(remaining_waves_beached >= 0):
                     # For these particles, wave number N_y is high enough
@@ -406,7 +406,7 @@ class ModifiedPlastDrift(OceanDrift):
     
             # Update particle position and number of waves
             y[active_mask] = active_particles
-            remaining_waves[active_mask] = remaining_waves_for_active_particles
+            remaining_waves[active_mask] = max(remaining_waves_for_active_particles,0)
 
         return y
 
