@@ -390,14 +390,16 @@ class ModifiedPlastDrift(OceanDrift):
 
 
                     ### PUSHED UP PARTICLES
-                    # Get new position, then move on to next iteration
-                    particles_affected_by_wave[pushed_up] = self.truncated_Rayleigh((p_y[still_more_waves_mask])[pushed_up], 
-                                                                                    sigma=(beached_scale[still_more_waves_mask])[pushed_up], 
-                                                                                    eta=(beached_loc[still_more_waves_mask]))[pushed_up]
+                    if np.sum(pushed_up) > 0:
+                        # Get new position, then move on to next iteration
+                        particles_affected_by_wave[pushed_up] = self.truncated_Rayleigh((p_y[still_more_waves_mask])[pushed_up], 
+                                                                                        sigma=(beached_scale[still_more_waves_mask])[pushed_up], 
+                                                                                        eta=(beached_loc[still_more_waves_mask]))[pushed_up]
 
                     ### WASHED OUT PARTICLES
-                    # Set to zero, then move on to next iteration 
-                    particles_affected_by_wave[washed_out] = 0. + (beached_loc[still_more_waves_mask])[washed_out] 
+                    if np.sum(washed_out) > 0:
+                        # Set to zero, then move on to next iteration 
+                        particles_affected_by_wave[washed_out] = 0. + (beached_loc[still_more_waves_mask])[washed_out] 
 
                     # Put back in
                     beached_particles[still_more_waves_mask] = particles_affected_by_wave
