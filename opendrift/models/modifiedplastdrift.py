@@ -153,9 +153,16 @@ class ModifiedPlastDrift(OceanDrift):
             logger.debug(f'Running beaching model for {N_beaching_particles} particles.')
             Tp = self.environment.sea_surface_wave_period_at_variance_spectral_density_maximum[on_land]
             dt = np.abs(self.time_step.total_seconds())
-            Nw = np.int32(Tp/dt) # Number of waves in the timestep
+            Nw = np.int32(dt/Tp) # Number of waves in the timestep
             y = self.elements.height_on_beach[on_land]
             eta = self.environment.sea_surface_height[on_land]
+            
+            # Not sure if this is the way to do it but I need to somehow make sure that floating particles are at y=eta for the method to work 
+            if np.any(y==0):
+                y[y==0] = eta[y==0]
+            if np.any(y < eta):
+                y[y<eta] = eta[y<eta]
+            
             
             # Compute sigma for the Rayleigh distribution
             H_s = self.environment.sea_surface_wave_significant_height[on_land]
@@ -221,18 +228,16 @@ class ModifiedPlastDrift(OceanDrift):
             else:
                 logger.debug('Using currrent drift factor between %s and %s'
                             % (cdfmin, cdfmax))
-        factor = factor*cdf
-        # Runge-Kutta scheme
-        floating = self.elements.beached == 0 
         on_land = self.elements.beached > 0 
+        
+        factor = factor*cdf
+        factor[on_land] = 0
+        # Runge-Kutta scheme
+        
 
         if self.get_config('drift:advection_scheme')[0:11] == 'runge-kutta':
             x_vel = self.environment.x_sea_water_velocity
             y_vel = self.environment.y_sea_water_velocity
-
-            # Set velocity to zero if particle is beached 
-            x_vel[on_land] = 0
-            y_vel[on_land] = 0
 
             # Find midpoint
             az = np.degrees(np.arctan2(x_vel, y_vel))
@@ -253,11 +258,6 @@ class ModifiedPlastDrift(OceanDrift):
                 x_vel2 = mid_env['x_sea_water_velocity']
                 y_vel2 = mid_env['y_sea_water_velocity']
 
-                
-                # Set to zero if particle is on land 
-                x_vel2[on_land] = 0
-                y_vel2[on_land] = 0
-
                 az2 = np.degrees(np.arctan2(x_vel2, y_vel2))
                 speed2 = np.sqrt(x_vel2*x_vel2 + y_vel2*y_vel2)
                 dist2 = speed2*self.time_step.total_seconds()*.5
@@ -272,10 +272,6 @@ class ModifiedPlastDrift(OceanDrift):
                 # Third step
                 x_vel3 = env2['x_sea_water_velocity']
                 y_vel3 = env2['y_sea_water_velocity']
-
-                # Set velocities to zero if particle is on land 
-                x_vel3[on_land] = 0 
-                y_vel3[on_land] = 0
 
                 az3 = np.degrees(np.arctan2(x_vel3, y_vel3))
                 speed3 = np.sqrt(x_vel3*x_vel3 + y_vel3*y_vel3)
@@ -292,10 +288,6 @@ class ModifiedPlastDrift(OceanDrift):
                 x_vel4 = env3['x_sea_water_velocity']
                 y_vel4 = env3['y_sea_water_velocity']
 
-                # Set velocities to zero if particle is on land 
-                x_vel4[on_land] = 0 
-                y_vel4[on_land] = 0
-
                 u4 = (x_vel + 2*x_vel2 + 2* x_vel3 + x_vel4)/6.0
                 v4 = (y_vel + 2*y_vel2 + 2* y_vel3 + y_vel4)/6.0
                 # Move particles using runge-kutta4 velocity
@@ -311,10 +303,6 @@ class ModifiedPlastDrift(OceanDrift):
             
             x_vel = self.environment.x_sea_water_velocity
             y_vel = self.environment.y_sea_water_veloxity
-
-            # Set velocity to zero if particle is on land 
-            x_vel[on_land] = 0
-            y_vel[on_land] = 0
 
             self.update_positions(
                     factor*x_vel,
@@ -342,66 +330,79 @@ class ModifiedPlastDrift(OceanDrift):
             active_mask = remaining_waves > 0
             active_particles = y[active_mask]
             remaining_waves_for_active_particles = remaining_waves[active_mask]
+            loc_for_active_particles = loc[active_mask]
+            scale_for_active_particles = scale[active_mask]
 
             # Separate the floating particles from the beached particles
             beached_mask = active_particles > (0 + loc)
             floating_mask = ~beached_mask
-            
-            ### FLOATING PARTICLES 
-            remaining_waves_floating = remaining_waves_for_active_particles[floating_mask]
-            floating_particles = active_particles[floating_mask]
-
-            floating_particles = self.waves_on_floating_particles(Np=sum(floating_mask), p=p, Nw=remaining_waves_floating, scale=scale, loc=loc)
-            
-            # Done with all waves for these particles
-            remaining_waves_for_active_particles[floating_mask] = 0
-            active_particles[floating_mask] = floating_particles
+            ### FLOATING PARTICLES
+            if np.sum(floating_mask) > 0:
+                remaining_waves_floating = remaining_waves_for_active_particles[floating_mask]
+                floating_particles = active_particles[floating_mask]
+                floating_loc = loc_for_active_particles[floating_mask]
+                floating_scale = scale_for_active_particles[floating_mask]
+                
+                floating_particles = self.waves_on_floating_particles(Np=sum(floating_mask), 
+                                                                      p=p, 
+                                                                      Nw=remaining_waves_floating, 
+                                                                      scale=floating_scale, 
+                                                                      loc=floating_loc)
+                
+                # Done with all waves for these particles
+                remaining_waves_for_active_particles[floating_mask] = 0
+                active_particles[floating_mask] = floating_particles
 
 
             ### BEACHED PARTICLES 
-            remaining_waves_beached = remaining_waves_for_active_particles[beached_mask]
-            beached_particles = active_particles[beached_mask]
+            if np.sum(beached_mask) > 0:
+                remaining_waves_beached = remaining_waves_for_active_particles[beached_mask]
+                beached_particles = active_particles[beached_mask]
+                beached_loc = loc_for_active_particles[beached_mask]
+                beached_scale = scale_for_active_particles[beached_mask]
 
-            # Probability of a wave being higher than the particle positions
-            p_y = scipy.stats.rayleigh.sf(beached_particles, scale=scale, loc=loc)
+                # Probability of a wave being higher than the particle positions
+                p_y = scipy.stats.rayleigh.sf(beached_particles, scale=beached_scale, loc=beached_loc)
 
-            # Number of waves it takes to get one that is high enough
-            N_y = scipy.stats.geom.rvs(p_y) # Geometric distribution
+                # Number of waves it takes to get one that is high enough
+                N_y = scipy.stats.geom.rvs(p_y) # Geometric distribution
 
-            # The lower waves don't affect the particles so we can ignore them
-            # Remove the lower waves from the number of remaining waves 
-            #remaining_waves_beached -= N_y
-            remaining_waves_for_active_particles[beached_mask] = remaining_waves_beached - N_y
-            remaining_waves_beached = remaining_waves_beached - N_y 
-            # Check for particles that still have more waves remaining after we removed the lower ones 
-            if np.any(remaining_waves_beached >= 0):
-                # For these particles, wave number N_y is high enough
-                # Now we need to figure out what happens when the wave hits
+                # The lower waves don't affect the particles so we can ignore them
+                # Remove the lower waves from the number of remaining waves 
+                #remaining_waves_beached -= N_y
+                remaining_waves_for_active_particles[beached_mask] = remaining_waves_beached - N_y
+                remaining_waves_beached = remaining_waves_beached - N_y 
+                # Check for particles that still have more waves remaining after we removed the lower ones 
+                if np.any(remaining_waves_beached >= 0):
+                    # For these particles, wave number N_y is high enough
+                    # Now we need to figure out what happens when the wave hits
 
-                # Get the particles that still have remaining waves
-                still_more_waves_mask = remaining_waves_beached >= 0
-                n_remaining = np.sum(still_more_waves_mask) # Number of particles that still have remaning waves 
-                particles_affected_by_wave = beached_particles[still_more_waves_mask]
-    
-                # Get p for the particles that are affected by the waves 
-                # and check if particles are pushed up or washed out 
-                r = np.random.random(n_remaining)
-                pushed_up = r < p # Mask for particles that are pushed up 
-                washed_out = ~pushed_up # Mask for particles that are washed out 
+                    # Get the particles that still have remaining waves
+                    still_more_waves_mask = remaining_waves_beached >= 0
+                    n_remaining = np.sum(still_more_waves_mask) # Number of particles that still have remaning waves 
+                    particles_affected_by_wave = beached_particles[still_more_waves_mask]
+        
+                    # Get p for the particles that are affected by the waves 
+                    # and check if particles are pushed up or washed out 
+                    r = np.random.random(n_remaining)
+                    pushed_up = r < p # Mask for particles that are pushed up 
+                    washed_out = ~pushed_up # Mask for particles that are washed out 
 
 
-                ### PUSHED UP PARTICLES
-                # Get new position, then move on to next iteration
-                particles_affected_by_wave[pushed_up] = self.truncated_Rayleigh((p_y[still_more_waves_mask])[pushed_up], sigma=scale, eta=loc)
+                    ### PUSHED UP PARTICLES
+                    # Get new position, then move on to next iteration
+                    particles_affected_by_wave[pushed_up] = self.truncated_Rayleigh((p_y[still_more_waves_mask])[pushed_up], 
+                                                                                    sigma=(beached_scale[still_more_waves_mask])[pushed_up], 
+                                                                                    eta=(beached_loc[still_more_waves_mask]))[pushed_up]
 
-                ### WASHED OUT PARTICLES
-                # Set to zero, then move on to next iteration 
-                particles_affected_by_wave[washed_out] = 0. + loc 
+                    ### WASHED OUT PARTICLES
+                    # Set to zero, then move on to next iteration 
+                    particles_affected_by_wave[washed_out] = 0. + (beached_loc[still_more_waves_mask])[washed_out] 
 
-                # Put back in
-                beached_particles[still_more_waves_mask] = particles_affected_by_wave
-            
-            active_particles[beached_mask] = beached_particles
+                    # Put back in
+                    beached_particles[still_more_waves_mask] = particles_affected_by_wave
+                
+                active_particles[beached_mask] = beached_particles
     
             # Update particle position and number of waves
             y[active_mask] = active_particles
