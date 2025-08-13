@@ -334,7 +334,7 @@ class ModifiedPlastDrift(OceanDrift):
             scale_for_active_particles = scale[active_mask]
 
             # Separate the floating particles from the beached particles
-            beached_mask = active_particles > (0 + loc)
+            beached_mask = active_particles > (0 + loc_for_active_particles)
             floating_mask = ~beached_mask
             ### FLOATING PARTICLES
             if np.sum(floating_mask) > 0:
@@ -406,7 +406,7 @@ class ModifiedPlastDrift(OceanDrift):
     
             # Update particle position and number of waves
             y[active_mask] = active_particles
-            remaining_waves[active_mask] = max(remaining_waves_for_active_particles,0)
+            remaining_waves[active_mask] = np.array([max(w,0) for w in remaining_waves_for_active_particles])
 
         return y
 
