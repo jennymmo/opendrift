@@ -364,6 +364,10 @@ class ModifiedPlastDrift(OceanDrift):
                 # Probability of a wave being higher than the particle positions
                 p_y = scipy.stats.rayleigh.sf(beached_particles, scale=beached_scale, loc=beached_loc)
 
+                # Add a tolerance for p_y
+                tol = 1e-10
+                if np.any(p_y) < tol:
+                    p_y[p_y < tol] = tol
                 # Number of waves it takes to get one that is high enough
                 N_y = scipy.stats.geom.rvs(p_y) # Geometric distribution
 
