@@ -685,10 +685,13 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                 self.elements.last_floating_lon[floating] = self.elements.lon[floating]
                 self.elements.last_floating_lat[floating] = self.elements.lat[floating]
                 self.elements.beached[floating] = 0
+                self.elements.moving[floating] = 1
                 logger.debug(f"{len(floating)} elements floating.")
 
             if len(on_land) > 0:
                 self.elements.beached[on_land] = 1
+                # To disable advection etc when on land, set moving to 0
+                self.elements.moving[on_land] = 0
                 logger.debug(f"{len(on_land)} elements on land.")
         
         if i == 'stranding':  # Deactivate elements on land, but not in air
