@@ -178,7 +178,7 @@ class ModifiedPlastDrift(OceanDrift):
 
             
             # TODO: Set p some other way
-            p = 0.2
+            p = 0.1
             if callable(p):
                 # p is not a constant
                 y = one_timestep_varying_p(y=y,
@@ -270,8 +270,8 @@ class ModifiedPlastDrift(OceanDrift):
                 p_y = scipy.stats.rayleigh.sf(beached_particles, scale=beached_scale, loc=beached_loc)
 
                 # Add a tolerance for p_y
-                tol = 1e-10
-                if np.any(p_y) < tol:
+                tol = 1e-5
+                if np.any(p_y < tol):
                     p_y[p_y < tol] = tol
                 # Number of waves it takes to get one that is high enough
                 N_y = scipy.stats.geom.rvs(p_y) # Geometric distribution
@@ -303,7 +303,7 @@ class ModifiedPlastDrift(OceanDrift):
                         # Get new position, then move on to next iteration
                         particles_affected_by_wave[pushed_up] = self.truncated_Rayleigh((p_y[still_more_waves_mask])[pushed_up], 
                                                                                         sigma=(beached_scale[still_more_waves_mask])[pushed_up], 
-                                                                                        eta=(beached_loc[still_more_waves_mask]))[pushed_up]
+                                                                                        eta=(beached_loc[still_more_waves_mask])[pushed_up])
 
                     ### WASHED OUT PARTICLES
                     if np.sum(washed_out) > 0:
