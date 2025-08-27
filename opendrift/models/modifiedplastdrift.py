@@ -134,7 +134,7 @@ class ModifiedPlastDrift(OceanDrift):
                     size=self.num_elements_active())
 
     def beaching_resuspension(self):
-
+        
         on_land = self.elements.beached == 1
         floating = ~on_land
 
@@ -151,6 +151,9 @@ class ModifiedPlastDrift(OceanDrift):
         else:            
             # TODO: Only do this for particles that were not beached this timestep
             logger.debug(f'Running beaching model for {N_beaching_particles} particles.')
+            beached_status = self.elements.beached[on_land]
+
+            # Get 
             Tp = self.environment.sea_surface_wave_period_at_variance_spectral_density_maximum[on_land]
             dt = np.abs(self.time_step.total_seconds())
             Nw = np.int32(dt/Tp) # Number of waves in the timestep
@@ -198,22 +201,27 @@ class ModifiedPlastDrift(OceanDrift):
                 
             beached_mask = y > eta
             floating_mask = ~beached_mask
+            
+            
 
             self.elements.height_on_beach[on_land] = y 
             # Beached: stay beached
             if np.sum(beached_mask) > 0:
+                beached_status[beached_mask] = 1
                 logger.debug(f'{np.sum(beached_mask)} particles still beached')
-                (self.elements.beached[on_land])[beached_mask] = 1
+                #(self.elements.beached[on_land])[beached_mask] = 1
 
             # Floating: Put back to the last floating location they had
             if np.sum(floating_mask) > 0:
+                beached_status[floating_mask] = 0
                 logger.debug(f'{np.sum(floating_mask)} particles resuspended.')
                 (self.elements.lon[on_land])[floating_mask] = (self.elements.last_floating_lon[on_land])[floating_mask]
                 (self.elements.lat[on_land])[floating_mask] = (self.elements.last_floating_lat[on_land])[floating_mask]
-                (self.elements.beached[on_land])[floating_mask] = 0
+                #(self.elements.beached[on_land])[floating_mask] = 0
                 (self.elements.height_on_beach[on_land])[floating_mask] = 0
                 (self.elements.moving[on_land])[floating_mask] = 1 # Let resuspended particles move again 
             
+            self.elements.beached[on_land] = beached_status
             # TODO: Use a different variable than y
 
 
