@@ -694,11 +694,23 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                 self.elements.moving[floating] = 1
                 logger.debug(f"{len(floating)} elements floating.")
 
+
             if len(on_land) > 0:
                 self.elements.beached[on_land] = 1
                 # To disable advection etc when on land, set moving to 0
                 self.elements.moving[on_land] = 0
                 logger.debug(f"{len(on_land)} elements on land.")
+
+                # set position to just across the coastline 
+                self.elements.lon[on_land], self.elements.lat[on_land] = coastline_crossing(
+                        self._elements_previous.lon[self.elements.ID][on_land],
+                        self._elements_previous.lat[self.elements.ID][on_land],
+                        self.elements.lon[on_land],
+                        self.elements.lat[on_land],
+                        coastline_approximation_precision,
+                        land_side=True
+                    )
+
         
         if i == 'stranding':  # Deactivate elements on land, but not in air
             on_land = np.where(self.environment.land_binary_mask == 1)[0]

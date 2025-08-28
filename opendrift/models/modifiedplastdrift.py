@@ -18,8 +18,8 @@ import numpy as np
 import scipy
 import logging; logger = logging.getLogger(__name__)
 from opendrift.models.oceandrift import OceanDrift, Lagrangian3DArray
+from opendrift.models.basemodel import coastline_crossing
 from opendrift.config import CONFIG_LEVEL_ESSENTIAL, CONFIG_LEVEL_BASIC, CONFIG_LEVEL_ADVANCED
-from shoreline_interactions import one_timestep_constant_p, one_timestep_varying_p
 import pyproj
 from enum import Enum 
 import sys
@@ -108,13 +108,13 @@ class ModifiedPlastDrift(OceanDrift):
         # Simply move particles with ambient current
         self.advect_ocean_current()
 
-        #self.update_particle_depth()
+        self.update_particle_depth()
 
         # Advect particles due to Stokes drift
-        #self.stokes_drift()
+        self.stokes_drift()
 
         # Advect particles due to wind-induced shear near surface
-        #self.advect_wind()
+        self.advect_wind()
 
         self.beaching_resuspension()
 
@@ -133,25 +133,16 @@ class ModifiedPlastDrift(OceanDrift):
                             self.elements.terminal_velocity,
                     size=self.num_elements_active())
 
-    def beaching_resuspension(self):
-        
-        on_land = self.elements.beached == 1
-        floating = ~on_land
+    def beaching_resuspension(self):        
+        on_land = np.where(self.elements.beached == 1)[0]
 
-        # Save the last floating location, for use in resuspension
-        if np.sum(floating) > 0:
-            self.elements.last_floating_lon[floating] = self.elements.lon[floating]
-            self.elements.last_floating_lat[floating] = self.elements.lat[floating]
-            logger.debug('Saved last floating positions')
-                           
         # Tackle beaching and resuspension for particles on land
-        N_beaching_particles = np.sum(on_land)
+        N_beaching_particles = len(on_land)
         if N_beaching_particles == 0:
             logger.debug('No elements hit coastline')
         else:            
             # TODO: Only do this for particles that were not beached this timestep
             logger.debug(f'Running beaching model for {N_beaching_particles} particles.')
-            beached_status = self.elements.beached[on_land]
 
             # Get 
             Tp = self.environment.sea_surface_wave_period_at_variance_spectral_density_maximum[on_land]
@@ -181,15 +172,17 @@ class ModifiedPlastDrift(OceanDrift):
 
             
             # TODO: Set p some other way
-            p = 0.1
+            p = 0.5
             if callable(p):
                 # p is not a constant
-                y = one_timestep_varying_p(y=y,
-                                           p=p,
-                                           Nw=Nw,
-                                           t=self.time,
-                                           scale=sigma,
-                                           loc=eta)
+                # TODO: implement
+                #y = self.one_timestep_varying_p(y=y,
+                #                           p=p,
+                #                           Nw=Nw,
+                #                           t=self.time,
+                #                           scale=sigma,
+                #                           loc=eta)
+                pass
             else:
                 logger.debug("p is constant")
                 y = self.one_timestep_constant_p(y=y, 
@@ -202,31 +195,33 @@ class ModifiedPlastDrift(OceanDrift):
             beached_mask = y > eta
             floating_mask = ~beached_mask
             
-            
-
             self.elements.height_on_beach[on_land] = y 
             # Beached: stay beached
             if np.sum(beached_mask) > 0:
-                beached_status[beached_mask] = 1
                 logger.debug(f'{np.sum(beached_mask)} particles still beached')
-                #(self.elements.beached[on_land])[beached_mask] = 1
 
             # Floating: Put back to the last floating location they had
             if np.sum(floating_mask) > 0:
-                beached_status[floating_mask] = 0
-                logger.debug(f'{np.sum(floating_mask)} particles resuspended.')
-                (self.elements.lon[on_land])[floating_mask] = (self.elements.last_floating_lon[on_land])[floating_mask]
-                (self.elements.lat[on_land])[floating_mask] = (self.elements.last_floating_lat[on_land])[floating_mask]
-                #(self.elements.beached[on_land])[floating_mask] = 0
-                (self.elements.height_on_beach[on_land])[floating_mask] = 0
-                (self.elements.moving[on_land])[floating_mask] = 1 # Let resuspended particles move again 
-            
-            self.elements.beached[on_land] = beached_status
+                resuspended_mask = on_land[floating_mask]
+                self.resuspend(resuspended_mask)
+    
             # TODO: Use a different variable than y
 
-
-
-
+    def resuspend(self, mask):
+        coastline_approximation_precision = self.get_config('general:coastline_approximation_precision')
+        logger.debug(f'{np.sum(mask)} particles resuspended.')
+        # Put particles back just across the coastline
+        self.elements.lon[mask], self.elements.lat[mask] = coastline_crossing(
+            self.elements.last_floating_lon[self.elements.ID][mask],
+            self.elements.last_floating_lat[self.elements.ID][mask],
+            self.elements.lon[mask],
+            self.elements.lat[mask],
+            coastline_approximation_precision,
+            land_side=False
+        )
+        self.elements.beached[mask] = 0
+        self.elements.moving[mask] = 1
+        self.elements.height_on_beach[mask] = 0
 
 
     ###### For beaching model
@@ -379,3 +374,6 @@ class ModifiedPlastDrift(OceanDrift):
         """ Returns the minimum of N uniformly distributed numbers in the interval [0, 1] """
         U_min = scipy.stats.beta.rvs(a=1, b=N)
         return U_min
+    
+
+    
