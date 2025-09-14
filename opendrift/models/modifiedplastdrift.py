@@ -172,7 +172,7 @@ class ModifiedPlastDrift(OceanDrift):
 
             
             # TODO: Set p some other way
-            p = 0.5
+            p = 0.25
             if callable(p):
                 # p is not a constant
                 # TODO: implement
