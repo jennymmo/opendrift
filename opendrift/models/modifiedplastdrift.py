@@ -78,6 +78,7 @@ class ModifiedPlastDrift(OceanDrift):
         'land_binary_mask': {'fallback': None},
         'sea_surface_wave_significant_height': {'fallback': 0},
         'sea_surface_wave_period_at_variance_spectral_density_maximum': {'fallback': 0},
+        'sea_surface_wave_peak_period_from_variance_spectral_density' : {'fallback': -1},
         'beach_angle': {'fallback': np.radians(5)}
         }
 
@@ -146,10 +147,15 @@ class ModifiedPlastDrift(OceanDrift):
 
             # Get 
             Tp = self.environment.sea_surface_wave_period_at_variance_spectral_density_maximum[on_land]
+            if np.all(Tp == 0):
+                #and np.any(self.environment.sea_surface_wave_peak_period_from_variance_spectral_density[on_land] > 0):
+                Tp = self.environment.sea_surface_wave_peak_period_from_variance_spectral_density[on_land]
             dt = np.abs(self.time_step.total_seconds())
             Nw = np.int32(dt/Tp) # Number of waves in the timestep
             y = self.elements.height_on_beach[on_land]
             eta = self.environment.sea_surface_height[on_land]
+
+            
             
             # Not sure if this is the way to do it but I need to somehow make sure that floating particles are at y=eta for the method to work 
             if np.any(y==0):
@@ -171,26 +177,18 @@ class ModifiedPlastDrift(OceanDrift):
                 sigma[~steep_beach] *= 0.05
 
             
-            # TODO: Set p some other way
-            p = 0.25
-            if callable(p):
-                # p is not a constant
-                # TODO: implement
-                #y = self.one_timestep_varying_p(y=y,
-                #                           p=p,
-                #                           Nw=Nw,
-                #                           t=self.time,
-                #                           scale=sigma,
-                #                           loc=eta)
-                pass
-            else:
-                logger.debug("p is constant")
-                y = self.one_timestep_constant_p(y=y, 
-                                            p=p,
-                                            Nw=Nw,
-                                            t=self.time,
-                                            scale=sigma,
-                                            loc=eta)
+            p = self.beaching_probability
+            # Assuming that p is a function of (lat, lon, y, and time)
+            lats = self.elements.lat[on_land]
+            lons = self.elements.lon[on_land]
+            p_evaluated = p(lats, lons, y, self.time)
+            
+            y = self.one_timestep_constant_p(y=y, 
+                                        p=p_evaluated,
+                                        Nw=Nw,
+#                                        t=self.time,
+                                        scale=sigma,
+                                        loc=eta)
                 
             beached_mask = y > eta
             floating_mask = ~beached_mask
@@ -225,7 +223,7 @@ class ModifiedPlastDrift(OceanDrift):
 
 
     ###### For beaching model
-    def one_timestep_constant_p(self, y, p, Nw, t, residence_time=None, scale=1, loc=0):
+    def one_timestep_constant_p(self, y, p, Nw, scale=1, loc=0):
         # Count the number of particles
         Np = len(y)
 
@@ -374,6 +372,4 @@ class ModifiedPlastDrift(OceanDrift):
         """ Returns the minimum of N uniformly distributed numbers in the interval [0, 1] """
         U_min = scipy.stats.beta.rvs(a=1, b=N)
         return U_min
-    
-
     
