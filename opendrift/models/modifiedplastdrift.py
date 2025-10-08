@@ -112,7 +112,7 @@ class ModifiedPlastDrift(OceanDrift):
         self.update_particle_depth()
 
         # Advect particles due to Stokes drift
-        self.stokes_drift()
+        #self.stokes_drift()
 
         # Advect particles due to wind-induced shear near surface
         self.advect_wind()
@@ -177,6 +177,7 @@ class ModifiedPlastDrift(OceanDrift):
                 sigma[~steep_beach] *= 0.05
 
             
+            # TODO: Handle the case if this is not provided 
             p = self.beaching_probability
             # Assuming that p is a function of (lat, lon, y, and time)
             lats = self.elements.lat[on_land]
@@ -238,6 +239,7 @@ class ModifiedPlastDrift(OceanDrift):
             remaining_waves_for_active_particles = remaining_waves[active_mask]
             loc_for_active_particles = loc[active_mask]
             scale_for_active_particles = scale[active_mask]
+            p_active = p[active_mask]
 
             # Separate the floating particles from the beached particles
             beached_mask = active_particles > (0 + loc_for_active_particles)
@@ -250,7 +252,7 @@ class ModifiedPlastDrift(OceanDrift):
                 floating_scale = scale_for_active_particles[floating_mask]
                 
                 floating_particles = self.waves_on_floating_particles(Np=sum(floating_mask), 
-                                                                      p=p, 
+                                                                      p=p_active[floating_mask], 
                                                                       Nw=remaining_waves_floating, 
                                                                       scale=floating_scale, 
                                                                       loc=floating_loc)
@@ -266,6 +268,7 @@ class ModifiedPlastDrift(OceanDrift):
                 beached_particles = active_particles[beached_mask]
                 beached_loc = loc_for_active_particles[beached_mask]
                 beached_scale = scale_for_active_particles[beached_mask]
+                p_for_beached_particles = p_active[beached_mask]
 
                 # Probability of a wave being higher than the particle positions
                 p_y = scipy.stats.rayleigh.sf(beached_particles, scale=beached_scale, loc=beached_loc)
@@ -295,7 +298,7 @@ class ModifiedPlastDrift(OceanDrift):
                     # Get p for the particles that are affected by the waves 
                     # and check if particles are pushed up or washed out 
                     r = np.random.random(n_remaining)
-                    pushed_up = r < p # Mask for particles that are pushed up 
+                    pushed_up = r < p_for_beached_particles[still_more_waves_mask] # Mask for particles that are pushed up 
                     washed_out = ~pushed_up # Mask for particles that are washed out 
 
 
