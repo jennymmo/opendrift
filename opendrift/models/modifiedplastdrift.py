@@ -47,8 +47,11 @@ class PlasticObject(Lagrangian3DArray):
                                'default': 0}),
         ('last_floating_lat', {'dtype': np.float32,
                                'units': 'm',
-                               'default': 0})
-                            ],)
+                               'default': 0}),
+        ('last_beaching_probability', {'dtype': np.float32,
+                                       'units': 1,
+                                       'default': 0.5})
+        ],)
 
 
 class ModifiedPlastDrift(OceanDrift):
@@ -136,7 +139,6 @@ class ModifiedPlastDrift(OceanDrift):
 
     def beaching_resuspension(self):        
         on_land = np.where(self.elements.beached == 1)[0]
-
         # Tackle beaching and resuspension for particles on land
         N_beaching_particles = len(on_land)
         if N_beaching_particles == 0:
@@ -154,7 +156,7 @@ class ModifiedPlastDrift(OceanDrift):
             Nw = np.int32(dt/Tp) # Number of waves in the timestep
             y = self.elements.height_on_beach[on_land]
             eta = self.environment.sea_surface_height[on_land]
-
+            p = self.elements.last_beaching_probability[on_land]
             
             
             # Not sure if this is the way to do it but I need to somehow make sure that floating particles are at y=eta for the method to work 
@@ -178,16 +180,25 @@ class ModifiedPlastDrift(OceanDrift):
 
             
             # TODO: Handle the case if this is not provided 
-            p = self.beaching_probability
-            # Assuming that p is a function of (lat, lon, y, and time)
-            lats = self.elements.lat[on_land]
-            lons = self.elements.lon[on_land]
-            p_evaluated = p(lats, lons, y, self.time)
+            #p = self.beaching_probability
             
+            # Only evaluate for those that have moved 
+            # Assuming that p is a function of (lat, lon, y, and time)
+            lats = np.array(self.elements.lat[on_land])
+            lons = np.array(self.elements.lon[on_land])
+            prev_lats = np.array(self._elements_previous.lat[self.elements.ID][on_land].data)
+            prev_lons = np.array(self._elements_previous.lon[self.elements.ID][on_land].data)
+
+            moved_lat = lats != prev_lats
+            moved_lon = lons != prev_lons
+            moved = np.logical_or(moved_lat, moved_lon)
+            if np.sum(moved) > 0:
+                p_moved = self.beaching_probability(lats[moved], lons[moved], y[moved], self.time)
+                p[moved] = p_moved
+
             y = self.one_timestep_constant_p(y=y, 
-                                        p=p_evaluated,
+                                        p=p,
                                         Nw=Nw,
-#                                        t=self.time,
                                         scale=sigma,
                                         loc=eta)
                 
@@ -195,6 +206,7 @@ class ModifiedPlastDrift(OceanDrift):
             floating_mask = ~beached_mask
             
             self.elements.height_on_beach[on_land] = y 
+            self.elements.last_beaching_probability[on_land] = p
             # Beached: stay beached
             if np.sum(beached_mask) > 0:
                 logger.debug(f'{np.sum(beached_mask)} particles still beached')
