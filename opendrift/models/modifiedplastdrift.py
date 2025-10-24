@@ -189,8 +189,12 @@ class ModifiedPlastDrift(OceanDrift):
             prev_lats = np.array(self._elements_previous.lat[self.elements.ID][on_land].data)
             prev_lons = np.array(self._elements_previous.lon[self.elements.ID][on_land].data)
 
-            moved_lat = lats != prev_lats
-            moved_lon = lons != prev_lons
+            diff_lat = np.abs(lats - prev_lats)
+            diff_lon = np.abs(lons - prev_lons)
+
+            tol = 1e-3 # Approx 100m 
+            moved_lat = diff_lat > tol
+            moved_lon = diff_lon > tol 
             moved = np.logical_or(moved_lat, moved_lon)
             if np.sum(moved) > 0:
                 p_moved = self.beaching_probability(lats[moved], lons[moved], y[moved], self.time)
