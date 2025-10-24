@@ -48,6 +48,12 @@ class PlasticObject(Lagrangian3DArray):
         ('last_floating_lat', {'dtype': np.float32,
                                'units': 'm',
                                'default': 0}),
+        ('last_beached_lon', {'dtype': np.float32,
+                               'units': 'm',
+                               'default': 0}),
+        ('last_beached_lat', {'dtype': np.float32,
+                               'units': 'm',
+                               'default': 0}),
         ('last_beaching_probability', {'dtype': np.float32,
                                        'units': 1,
                                        'default': 0.5})
@@ -186,8 +192,10 @@ class ModifiedPlastDrift(OceanDrift):
             # Assuming that p is a function of (lat, lon, y, and time)
             lats = np.array(self.elements.lat[on_land])
             lons = np.array(self.elements.lon[on_land])
-            prev_lats = np.array(self._elements_previous.lat[self.elements.ID][on_land].data)
-            prev_lons = np.array(self._elements_previous.lon[self.elements.ID][on_land].data)
+            prev_lats = np.array(self.elements.last_beached_lat[on_land])
+            prev_lons = np.array(self.elements.last_beached_lon[on_land])
+            #prev_lats = np.array(self._elements_previous.lat[self.elements.ID][on_land].data)
+            #prev_lons = np.array(self._elements_previous.lon[self.elements.ID][on_land].data)
 
             diff_lat = np.abs(lats - prev_lats)
             diff_lon = np.abs(lons - prev_lons)
@@ -209,8 +217,6 @@ class ModifiedPlastDrift(OceanDrift):
             beached_mask = y > eta
             floating_mask = ~beached_mask
             
-            self.elements.height_on_beach[on_land] = y 
-            self.elements.last_beaching_probability[on_land] = p
             # Beached: stay beached
             if np.sum(beached_mask) > 0:
                 logger.debug(f'{np.sum(beached_mask)} particles still beached')
@@ -221,6 +227,13 @@ class ModifiedPlastDrift(OceanDrift):
                 self.resuspend(resuspended_mask)
     
             # TODO: Use a different variable than y
+
+
+            # Finally,  Update object variables 
+            self.elements.height_on_beach[on_land] = y 
+            self.elements.last_beaching_probability[on_land] = p
+            self.elements.last_beached_lat[on_land] = lats
+            self.elements.last_beached_lon[on_land] = lons
 
     def resuspend(self, mask):
         coastline_approximation_precision = self.get_config('general:coastline_approximation_precision')
