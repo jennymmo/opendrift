@@ -374,7 +374,7 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                                         'description': 'Name of simulation'},
             'general:coastline_action': {
                 'type': 'enum',
-                'enum': ['none', 'stranding', 'previous', 'beachingmodel'],
+                'enum': ['none', 'stranding', 'previous', 'beachingmodel', 'exponential_decay'],
                 'default': 'stranding',
                 'level': CONFIG_LEVEL_BASIC,
                 'description': 'None means that objects may also move over land. '
@@ -682,7 +682,7 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                                      self.elements.z)
             self.environment.land_binary_mask = en.land_binary_mask
 
-        if i == "beachingmodel":
+        if i == "beachingmodel" or i == "exponential_decay":
             on_land = np.where(self.environment.land_binary_mask == 1)[0]
             floating = np.where(self.environment.land_binary_mask == 0)[0]
             #self.elements.beached = self.environment.land_binary_mask

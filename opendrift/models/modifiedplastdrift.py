@@ -12,7 +12,11 @@
 # You should have received a copy of the GNU General Public License
 # along with OpenDrift.  If not, see <https://www.gnu.org/licenses/>.
 #
-# Copyright 2015, Knut-Frode Dagestad, MET Norway
+# 
+# Modified from the original PlastDrift model by Jenny M. Mørk, NTNU, 2025
+#
+# NB! As of Dec 2025, this model is not compatible with deactivation of particles and simulations will crash.
+# This issue will be resolved in the future 
 
 import numpy as np
 import scipy
@@ -126,7 +130,11 @@ class ModifiedPlastDrift(OceanDrift):
         # Advect particles due to wind-induced shear near surface
         self.advect_wind()
 
-        self.beaching_resuspension()
+        coastline_action = self.get_config('general:coastline_action')
+        if coastline_action == 'beachingmodel':
+            self.beaching_resuspension()
+        elif coastline_action == 'exponential_decay':
+            self.exponential_decay()
 
     def update_particle_depth(self):
 
@@ -405,3 +413,52 @@ class ModifiedPlastDrift(OceanDrift):
         U_min = scipy.stats.beta.rvs(a=1, b=N)
         return U_min
     
+    def exponential_decay(self):
+        on_land = np.where(self.elements.beached == 1)[0]
+
+        N_beaching_particles = len(on_land)
+        if N_beaching_particles == 0:
+            logger.debug('No elements hit coastline')
+        else: 
+            logger.debug(f'Running beaching model for {N_beaching_particles} particles.')
+            
+            # Only evaluate for those that have moved 
+            # Assuming that p is a function of (lat, lon, y, and time)    
+            lats = np.array(self.elements.lat[on_land])
+            lons = np.array(self.elements.lon[on_land])
+            prev_lats = np.array(self.elements.last_beached_lat[on_land])
+            prev_lons = np.array(self.elements.last_beached_lon[on_land])
+            #prev_lats = np.array(self._elements_previous.lat[self.elements.ID][on_land].data)
+            #prev_lons = np.array(self._elements_previous.lon[self.elements.ID][on_land].data)
+
+            p = self.elements.last_beaching_probability[on_land]
+            diff_lat = np.abs(lats - prev_lats)
+            diff_lon = np.abs(lons - prev_lons)
+
+            tol = 1e-3 # Approx 100m 
+            moved_lat = diff_lat > tol
+            moved_lon = diff_lon > tol 
+            moved = np.logical_or(moved_lat, moved_lon)
+            if np.sum(moved) > 0:
+                p_moved = self.beaching_probability(lats[moved], lons[moved], None, self.time)
+                p[moved] = p_moved
+
+
+            # p is given in days 
+            r = np.random.random(N_beaching_particles)
+            beached_mask = r < p 
+            floating_mask  = ~beached_mask
+
+            # Beached: stay beached
+            if np.sum(beached_mask) > 0:
+                logger.debug(f'{np.sum(beached_mask)} particles still beached')
+
+            # Floating: Put back to the last floating location they had
+            if np.sum(floating_mask) > 0:
+                resuspended_mask = on_land[floating_mask]
+                self.resuspend(resuspended_mask)
+
+            # Finally,  Update object variables 
+            self.elements.last_beaching_probability[on_land] = p
+            self.elements.last_beached_lat[on_land] = lats
+            self.elements.last_beached_lon[on_land] = lons
