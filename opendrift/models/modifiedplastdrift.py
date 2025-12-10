@@ -446,7 +446,7 @@ class ModifiedPlastDrift(OceanDrift):
 
             # p is given in days 
             r = np.random.random(N_beaching_particles)
-            beached_mask = r < p 
+            beached_mask = r > p 
             floating_mask  = ~beached_mask
 
             # Beached: stay beached
