@@ -132,7 +132,7 @@ class ModifiedPlastDrift(OceanDrift):
 
         coastline_action = self.get_config('general:coastline_action')
         if coastline_action == 'beachingmodel':
-            self.beaching_resuspension()
+            self.beaching_resuspension_notides() # Only for one specific simulation!
         elif coastline_action == 'exponential_decay':
             self.exponential_decay()
 
@@ -414,6 +414,13 @@ class ModifiedPlastDrift(OceanDrift):
         return U_min
     
     def exponential_decay(self):
+        """ NB! Variable names don't make sense, because I wanted to reuse as much code as possible. 
+        
+        The variables are created for the other beaching model, so the names match the intended purpose there.
+        Here:
+        
+        p = the probability of resuspension, not of beaching
+        """
         on_land = np.where(self.elements.beached == 1)[0]
 
         N_beaching_particles = len(on_land)
@@ -444,9 +451,8 @@ class ModifiedPlastDrift(OceanDrift):
                 p[moved] = p_moved
 
 
-            # p is given in days 
             r = np.random.random(N_beaching_particles)
-            beached_mask = r > p 
+            beached_mask = r > p # 
             floating_mask  = ~beached_mask
 
             # Beached: stay beached
@@ -462,3 +468,96 @@ class ModifiedPlastDrift(OceanDrift):
             self.elements.last_beaching_probability[on_land] = p
             self.elements.last_beached_lat[on_land] = lats
             self.elements.last_beached_lon[on_land] = lons
+
+    def beaching_resuspension_notides(self):        
+            on_land = np.where(self.elements.beached == 1)[0]
+            # Tackle beaching and resuspension for particles on land
+            N_beaching_particles = len(on_land)
+            if N_beaching_particles == 0:
+                logger.debug('No elements hit coastline')
+            else:            
+                # TODO: Only do this for particles that were not beached this timestep
+                logger.debug(f'Running beaching model for {N_beaching_particles} particles.')
+
+                # Get 
+                Tp = self.environment.sea_surface_wave_period_at_variance_spectral_density_maximum[on_land]
+                if np.all(Tp == 0):
+                    #and np.any(self.environment.sea_surface_wave_peak_period_from_variance_spectral_density[on_land] > 0):
+                    Tp = self.environment.sea_surface_wave_peak_period_from_variance_spectral_density[on_land]
+                dt = np.abs(self.time_step.total_seconds())
+                Nw = np.int32(dt/Tp) # Number of waves in the timestep
+                y = self.elements.height_on_beach[on_land]
+                #eta = self.environment.sea_surface_height[on_land]
+                eta = np.zeros(N_beaching_particles)
+                p = self.elements.last_beaching_probability[on_land]
+                
+                
+                # Not sure if this is the way to do it but I need to somehow make sure that floating particles are at y=eta for the method to work 
+                if np.any(y==0):
+                    y[y==0] = eta[y==0]
+                if np.any(y < eta):
+                    y[y<eta] = eta[y<eta]
+                
+                
+                # Compute sigma for the Rayleigh distribution
+                H_s = self.environment.sea_surface_wave_significant_height[on_land]
+                H_rms = 0.5 * np.sqrt(2) * H_s
+                L = 9.81 * Tp**2 / (2*np.pi)
+                alpha = self.environment.beach_angle[on_land]
+                sigma = np.sqrt(H_rms*L)
+                steep_beach = np.tan(alpha) > 0.1 
+                if np.sum(steep_beach) > 0:
+                    sigma[steep_beach] *= 0.6 * np.tan(alpha)
+                if np.sum(~steep_beach) > 0:
+                    sigma[~steep_beach] *= 0.05
+
+                
+                # TODO: Handle the case if this is not provided 
+                #p = self.beaching_probability
+                
+                # Only evaluate for those that have moved 
+                # Assuming that p is a function of (lat, lon, y, and time)
+                lats = np.array(self.elements.lat[on_land])
+                lons = np.array(self.elements.lon[on_land])
+                prev_lats = np.array(self.elements.last_beached_lat[on_land])
+                prev_lons = np.array(self.elements.last_beached_lon[on_land])
+                #prev_lats = np.array(self._elements_previous.lat[self.elements.ID][on_land].data)
+                #prev_lons = np.array(self._elements_previous.lon[self.elements.ID][on_land].data)
+
+                diff_lat = np.abs(lats - prev_lats)
+                diff_lon = np.abs(lons - prev_lons)
+
+                tol = 1e-3 # Approx 100m 
+                moved_lat = diff_lat > tol
+                moved_lon = diff_lon > tol 
+                moved = np.logical_or(moved_lat, moved_lon)
+                if np.sum(moved) > 0:
+                    p_moved = self.beaching_probability(lats[moved], lons[moved], y[moved], self.time)
+                    p[moved] = p_moved
+
+                y = self.one_timestep_constant_p(y=y, 
+                                            p=p,
+                                            Nw=Nw,
+                                            scale=sigma,
+                                            loc=eta)
+                    
+                beached_mask = y > eta
+                floating_mask = ~beached_mask
+                
+                # Beached: stay beached
+                if np.sum(beached_mask) > 0:
+                    logger.debug(f'{np.sum(beached_mask)} particles still beached')
+
+                # Floating: Put back to the last floating location they had
+                if np.sum(floating_mask) > 0:
+                    resuspended_mask = on_land[floating_mask]
+                    self.resuspend(resuspended_mask)
+        
+                # TODO: Use a different variable than y
+
+
+                # Finally,  Update object variables 
+                self.elements.height_on_beach[on_land] = y 
+                self.elements.last_beaching_probability[on_land] = p
+                self.elements.last_beached_lat[on_land] = lats
+                self.elements.last_beached_lon[on_land] = lons
